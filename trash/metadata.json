@@ -1,0 +1,6 @@
+{
+  "name": "D&D Core AI: Intelligent Game Master",
+  "description": "Мультиагентная система для ведения игр по правилам D&D 5e с высокой точностью механик и иммерсивным повествованием.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI-driven storytelling", "D&D 5e Rule Engine", "Multi-agent coordination"]
+}
