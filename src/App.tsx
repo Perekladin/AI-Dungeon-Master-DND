@@ -1,18 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Send, 
+import {
+  Send,
   Terminal,
   Sparkles,
   Shield,
   Brain,
   Ghost
 } from 'lucide-react';
+import { playTurn } from './lib/agents';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
 }
+
+const INITIAL_WORLD = {
+  location: 'Таверна "Хромой Дракон" в теневом квартале',
+  summary: 'Игрок ищет информатора по кличке Барняр. В зале тавернщик, у стола двое наёмников.',
+  player: { hp_current: 24, hp_max: 24, modifier: 3 },
+  entities: {},
+  flags: {},
+};
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -22,21 +31,15 @@ export default function App() {
   const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
   const [gameStarted, setGameStarted] = useState(false);
   const [inputMode, setInputMode] = useState<'action' | 'dialogue'>('action');
-  const [worldState, setWorldState] = useState('Вы находитесь в таверне. Рядом тавернщик. Вы ищете Барняра.');
+  const [worldState, setWorldState] = useState<Record<string, any>>(INITIAL_WORLD);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const API_URL = "http://localhost:8000";
 
-  // Локальный кеш истории для ИИ
-  const getContext = () => {
-    return messages.slice(-4).map(m => `${m.role === 'user' ? 'Игрок' : 'Мастер'}: ${m.content}`).join('\n');
-  };
-
   const checkServer = async () => {
     try {
       const res = await fetch(`${API_URL}/health`);
-      if (res.ok) setServerStatus('online');
-      else setServerStatus('offline');
+      setServerStatus(res.ok ? 'online' : 'offline');
     } catch {
       setServerStatus('offline');
     }
@@ -52,26 +55,10 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const callAgent = async (mode: string, prompt: string) => {
-    setCurrentStep(mode === 'storyteller' ? 'Описываю...' : mode === 'judge' ? 'Проверяю правила...' : mode === 'keeper' ? 'Запоминаю...' : 'Анализирую...');
-    const response = await fetch(`${API_URL}/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        mode, 
-        prompt, 
-        context: mode === 'keeper' ? getContext() : `Состояние мира: ${worldState}\n${getContext()}`,
-        max_tokens: mode === 'storyteller' ? 512 : 256 
-      })
-    });
-    if (!response.ok) throw new Error(`Agent ${mode} failed`);
-    const data = await response.json();
-    return data.response;
-  };
-
   const startGame = () => {
     const lore = "Вы стоите перед тяжелыми дубовыми дверями таверны 'Хромой Дракон'. Ветер свистит в узких улочках теневого квартала, донося запахи печеного мяса и дешевого эля. Ваша цель — найти информатора по кличке Барняр. Что вы будете делать?";
     setMessages([{ id: 'init', role: 'assistant', content: lore }]);
+    setWorldState(INITIAL_WORLD);
     setGameStarted(true);
   };
 
@@ -79,70 +66,38 @@ export default function App() {
     if (!input.trim() || isLoading) return;
 
     const userContent = inputMode === 'dialogue' ? `Я говорю: "${input}"` : input;
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: userContent
-    };
-
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: userContent };
     setMessages(prev => [...prev, userMsg]);
-    const userInput = userContent;
     setInput('');
     setIsLoading(true);
+    setCurrentStep('Плетение судьбы...');
 
     try {
-      // 1. СУДЬЯ: Анализ возможности действия
-      // Если это разговор, судья почти всегда пропускает
-      let canProceed = true;
-      let promptToDescribe = userInput;
+      const result = await playTurn(userContent, worldState);
 
-      if (inputMode === 'action') {
-        const judgeVerdict = await callAgent('judge', userInput);
-        if (judgeVerdict.toUpperCase().includes('НЕВОЗМОЖНО')) {
-          canProceed = false;
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: "Вы пытаетесь сделать нечто невозможное. Мастер качает головой: 'Это за пределами ваших сил или законов этого мира'."
-          }]);
-        }
-      }
-      
-      if (canProceed) {
-        // 2. ЛОГИКА: Броски кубиков (только для действий)
-        let contextForStory = userInput;
-        if (inputMode === 'action') {
-          setCurrentStep('Бросаю кубики...');
-          const logicRes = await fetch(`${API_URL}/logic`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: 'logic', prompt: userInput })
-          });
-          const logicData = await logicRes.json();
-          contextForStory = `Игрок: ${userInput}. Итог механики: ${logicData.text}.`;
-        }
-        
-        // 3. РАССКАЗЧИК: Превращаем итог в художественный текст
-        const storyPrompt = `Действие: ${userInput}. Механический итог: ${inputMode === 'action' ? contextForStory : 'Успешный разговор'}. Опиши результат КРАСИВО и БЕЗ ЦИФР.`;
-        const narrative = await callAgent('storyteller', storyPrompt);
-
-        const assistantMsg: Message = {
+      // Если Судья сказал impossible — кратко уведомляем игрока
+      if (result.intent?.action === 'impossible') {
+        setMessages(prev => [...prev, {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: narrative
-        };
-        setMessages(prev => [...prev, assistantMsg]);
-
-        // 4. ХРАНИТЕЛЬ: Обновляем состояние мира (в фоне)
-        callAgent('keeper', "Обнови описание ситуации").then(newState => {
-          if (newState) setWorldState(newState);
-        }).catch(e => console.error("Keeper failed", e));
+          content: result.narration || "Мастер качает головой: это за пределами законов этого мира.",
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: result.narration,
+        }]);
       }
+
+      // world_state — источник истины с сервера (HP, локация, флаги)
+      setWorldState(result.world_state);
+
+      console.log(`[turn] ${result.time}s category=${result.category} roll=${result.mechanics.roll} success=${result.mechanics.success}`);
     } catch (err) {
       console.error(err);
       setMessages(prev => [...prev, {
-        id: 'err',
+        id: 'err' + Date.now(),
         role: 'assistant',
         content: "Мастер на мгновение задумался... (Ошибка связи. Проверьте сервер)."
       }]);
@@ -151,6 +106,8 @@ export default function App() {
       setCurrentStep(null);
     }
   };
+
+  const worldSummary = worldState?.summary || worldState?.location || 'Мир ждёт ваших действий.';
 
   if (!gameStarted) {
     return (
@@ -194,7 +151,7 @@ export default function App() {
               <Brain className="w-3 h-3" /> Текущая обстановка (Keeper)
             </div>
             <div className="text-xs text-slate-400 font-serif italic text-balance">
-              {worldState}
+              {worldSummary}
             </div>
           </div>
         </div>
