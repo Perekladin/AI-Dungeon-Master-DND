@@ -392,7 +392,7 @@ STORYTELLER_TEMPLATES = {
     ],
     "miss": [
         "Удар проходит вскользь. {monster} с рычанием отступает в тень, готовясь к ответному выпаду. Где-то капает вода. Ваша рукоять скользкая от пота.",
-        "Клинок рассекает только воздух. {monster.capitalize()} оскаливается, обнажая жёлтые зубы. Сердце колотится как молот по наковальне. Холод ползёт по спине.",
+        "Клинок рассекает только воздух. {monster_cap} оскаливается, обнажая жёлтые зубы. Сердце колотится как молот по наковальне. Холод ползёт по спине.",
         "Промах. {monster} уворачивается с неожиданной для его размеров ловкостью. Ваше дыхание сбилось. Бой не окончен.",
     ],
     "skill_success": [
@@ -434,9 +434,7 @@ def gen_storyteller(count: int) -> List[Dict]:
         loc = random.choice(LOCATIONS)
         mon = random.choice(MONSTERS)[0]
         tpl = random.choice(STORYTELLER_TEMPLATES[kind])
-        narration = tpl.format(monster=mon, **{"monster.capitalize()": mon.capitalize()}).replace(
-            "{monster.capitalize()}", mon.capitalize()
-        )
+        narration = tpl.format(monster=mon, monster_cap=mon.capitalize())
 
         # Сборка user-инпута в формате, который сервер реально подаёт
         if kind in ("hit", "spell_hit"):
