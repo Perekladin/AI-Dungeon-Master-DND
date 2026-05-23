@@ -1,0 +1,128 @@
+{
+  "name": "Карран Тёмный",
+  "race": "человек",
+  "class": "следопыт",
+  "level": 3,
+  "background": "наёмник",
+  "alignment": "нейтральный",
+
+  "abilities": {
+    "str": 14,
+    "dex": 16,
+    "con": 13,
+    "int": 11,
+    "wis": 14,
+    "cha": 10
+  },
+  "ability_modifiers": {
+    "str": 2,
+    "dex": 3,
+    "con": 1,
+    "int": 0,
+    "wis": 2,
+    "cha": 0
+  },
+  "proficiency_bonus": 2,
+
+  "hp_current": 24,
+  "hp_max": 24,
+  "ac": 15,
+  "speed": 30,
+  "initiative": 3,
+
+  "saves": {
+    "str": 4, "dex": 5, "con": 1, "int": 0, "wis": 2, "cha": 0
+  },
+
+  "skills": {
+    "athletics":       { "ability": "str", "proficient": true,  "bonus": 4 },
+    "acrobatics":      { "ability": "dex", "proficient": false, "bonus": 3 },
+    "stealth":         { "ability": "dex", "proficient": true,  "bonus": 5 },
+    "sleight_of_hand": { "ability": "dex", "proficient": false, "bonus": 3 },
+    "perception":      { "ability": "wis", "proficient": true,  "bonus": 4 },
+    "survival":        { "ability": "wis", "proficient": true,  "bonus": 4 },
+    "investigation":   { "ability": "int", "proficient": false, "bonus": 0 },
+    "history":         { "ability": "int", "proficient": false, "bonus": 0 },
+    "insight":         { "ability": "wis", "proficient": false, "bonus": 2 },
+    "persuasion":      { "ability": "cha", "proficient": false, "bonus": 0 },
+    "intimidation":    { "ability": "cha", "proficient": true,  "bonus": 2 },
+    "deception":       { "ability": "cha", "proficient": false, "bonus": 0 },
+    "arcana":          { "ability": "int", "proficient": false, "bonus": 0 },
+    "nature":          { "ability": "int", "proficient": true,  "bonus": 2 },
+    "religion":        { "ability": "int", "proficient": false, "bonus": 0 }
+  },
+
+  "weapons": [
+    {
+      "id": "longsword",
+      "name": "длинный меч",
+      "attack_bonus": 4,
+      "damage_dice": "1d8+2",
+      "damage_type": "рубящий",
+      "properties": ["versatile"]
+    },
+    {
+      "id": "shortbow",
+      "name": "короткий лук",
+      "attack_bonus": 5,
+      "damage_dice": "1d6+3",
+      "damage_type": "колющий",
+      "range": "80/320 футов",
+      "properties": ["ranged", "two-handed"]
+    },
+    {
+      "id": "dagger",
+      "name": "кинжал",
+      "attack_bonus": 5,
+      "damage_dice": "1d4+3",
+      "damage_type": "колющий",
+      "properties": ["finesse", "thrown"]
+    }
+  ],
+
+  "spells": [
+    {
+      "id": "hunters_mark",
+      "name": "Метка охотника",
+      "level": 1,
+      "school": "Прорицание",
+      "type": "concentration",
+      "effect": "+1d6 урона по отмеченной цели",
+      "slot_cost": 1
+    },
+    {
+      "id": "cure_wounds",
+      "name": "Лечение ран",
+      "level": 1,
+      "type": "touch",
+      "effect": "восстанавливает 1d8+2 HP",
+      "slot_cost": 1
+    }
+  ],
+  "spell_slots": {
+    "1": { "current": 3, "max": 3 }
+  },
+
+  "features": [
+    {
+      "name": "Любимый враг",
+      "description": "Преимущество на проверки выживания и истории для отслеживания орков и нежити."
+    },
+    {
+      "name": "Боец дикой природы",
+      "description": "Дополнительный бонус d8 к урону раз в ход против отмеченной цели."
+    }
+  ],
+
+  "inventory": [
+    "кожаный доспех с заклёпками",
+    "колчан стрел (20 шт)",
+    "набор путешественника",
+    "трутница",
+    "верёвка пеньковая 50 футов",
+    "12 золотых монет",
+    "медальон с потёртым гербом семьи"
+  ],
+
+  "backstory_short": "Бывший следопыт городской стражи, изгнанный за разглашение тайны мэра. Ищет информатора по кличке Барняр, который знает где спрятаны улики, способные обелить его имя."
+}

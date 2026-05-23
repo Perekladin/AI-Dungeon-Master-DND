@@ -6,3 +6,19 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+training/outputs_*/
+
+# Training datasets (regeneratable via generate_datasets.py)
+training/*_data.jsonl
+
+# Session logs (генерируются при каждом запуске сервера)
+training/logs/
+
+# Claude Code локальные настройки (специфично пользователя, не для репо)
+.claude/

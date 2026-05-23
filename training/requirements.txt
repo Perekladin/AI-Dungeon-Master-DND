@@ -1,22 +1,44 @@
-# DND AI - Python dependencies (optimized version)
+# D&D AI — Python dependencies (Гибрид B: Logic 1.5B + Narrative 7B через Ollama)
+#
+# ВАЖНО: Python 3.10 - 3.12. torch-directml ещё не имеет wheel-ов для 3.13+.
+# Создай venv на 3.12:
+#     py -3.12 -m venv .venv
+#     ./.venv/Scripts/Activate.ps1
+#     pip install -r training/requirements.txt
+#
+# Дополнительно (НЕ через pip):
+#   1. Установи Ollama с https://ollama.com/download/windows
+#   2. Скачай модель Narrative: ollama pull qwen2.5:7b-instruct-q4_K_M
 
-# Core ML
-torch>=2.0.0
-transformers>=4.35.0
-peft>=0.7.0
-accelerate>=0.24.0
+# === Core ML для Logic-агента (transformers + LoRA) ===
+torch-directml==0.2.5.dev240914 ; platform_system == "Windows"
+# torch==2.4.1 подтянется как зависимость torch-directml
 
-# Server
+# transformers 4.46.3 + peft 0.17.1 — совместимы с torch 2.4 и читают
+# LoRA-адаптеры с полями из новейшего peft (alora, arrow, eva и т.д.)
+transformers==4.46.3
+peft==0.17.1
+accelerate==1.0.1
+huggingface-hub==0.26.2
+tokenizers>=0.20,<0.21
+
+# === Server ===
 fastapi>=0.104.0
 uvicorn>=0.24.0
 pydantic>=2.0.0
 
-# Utilities
-numpy>=1.24.0
+# === Narrative backend (Ollama) ===
+# Ollama-сервер устанавливается отдельно с ollama.com.
+# Это Python-клиент для HTTP API.
+ollama>=0.4.0
+
+# === Utilities ===
+# ВАЖНО: numpy 2.x — torch 2.4.1 на Windows скомпилирован против неё.
+# numpy 1.x ломает DLL-загрузку через торч-numpy bridge на Windows.
+numpy>=2.0,<3.0
 tqdm>=4.66.0
+httpx>=0.25.0
 
-# Optimization
-bitsandbytes>=0.41.0  # For quantization (CUDA only)
-
-# Optional - for benchmarking
-httpx>=0.25.0  # async HTTP client
+# === Не используется в гибриде B (закомментировано) ===
+# bitsandbytes>=0.41.0     # квантование, CUDA only
+# llama-cpp-python         # альтернативный backend для Narrative

@@ -2,14 +2,37 @@
 // Новый рекомендуемый flow — звать /game/turn (один RPC, весь pipeline на сервере).
 // Старые helper'ы (callLocalAgent, runAgent) сохранены для совместимости.
 
-const PYTHON_SERVER =
-  (typeof process !== "undefined" && process.env && process.env.VITE_PYTHON_SERVER) ||
-  (import.meta as any).env?.VITE_PYTHON_SERVER ||
-  "http://localhost:8000";
+// Авто-определение адреса Python-сервера.
+// Логика:
+// 1) Если задано VITE_PYTHON_SERVER в .env — берём его (явный override).
+// 2) Если страница открыта в браузере — берём хост из window.location и порт 8000.
+//    Это работает и для localhost, и для LAN (192.168.x.x), и для туннелей (ngrok/cloudflare).
+// 3) Фоллбэк для SSR/Node — localhost.
+function resolveServerUrl(): string {
+  const envUrl =
+    (typeof process !== "undefined" && process.env && process.env.VITE_PYTHON_SERVER) ||
+    (import.meta as any).env?.VITE_PYTHON_SERVER;
+  if (envUrl) return envUrl;
 
-// Один полный ход может занять до 25 секунд на холодном AMD без квантования.
-const TURN_TIMEOUT_MS = 30_000;
-const SINGLE_AGENT_TIMEOUT_MS = 12_000;
+  if (typeof window !== "undefined" && window.location) {
+    // Берём хост из URL, который пользователь открыл, и подменяем порт на 8000.
+    // Пример: открыт http://192.168.1.5:5173/ → API будет http://192.168.1.5:8000
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+
+  return "http://localhost:8000";
+}
+
+const PYTHON_SERVER = resolveServerUrl();
+
+// Полный ход = 5 LLM-вызовов последовательно.
+// - GPU + квантование: 5-15 сек
+// - GPU без квантования (AMD DirectML): 15-40 сек
+// - CPU fallback: 60-180 сек (когда GPU не подхватился)
+// Ставим 240s чтобы фронт не отваливался на CPU — это удобно для отладки.
+// Если на GPU всё работает быстро, ничего не теряем (таймаут — это потолок, не задержка).
+const TURN_TIMEOUT_MS = 240_000;
+const SINGLE_AGENT_TIMEOUT_MS = 60_000;
 
 export interface TurnResult {
   status: "success" | "error";
@@ -31,9 +54,15 @@ export interface TurnResult {
   world_state: Record<string, any>;
 }
 
+export interface TurnHistoryEntry {
+  player: string;
+  master: string;
+}
+
 export async function playTurn(
   userInput: string,
-  worldState: Record<string, any>
+  worldState: Record<string, any>,
+  history: TurnHistoryEntry[] = []
 ): Promise<TurnResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TURN_TIMEOUT_MS);
@@ -41,7 +70,11 @@ export async function playTurn(
     const res = await fetch(`${PYTHON_SERVER}/game/turn`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_input: userInput, world_state: worldState }),
+      body: JSON.stringify({
+        user_input: userInput,
+        world_state: worldState,
+        history: history.slice(-3), // 3 последних хода — больше не нужно, контекст забьётся
+      }),
       signal: controller.signal as any,
     });
     if (!res.ok) {

@@ -7,7 +7,7 @@ import {
   Brain,
   Ghost
 } from 'lucide-react';
-import { playTurn } from './lib/agents';
+import { playTurn, type TurnHistoryEntry } from './lib/agents';
 
 interface Message {
   id: string;
@@ -23,6 +23,23 @@ const INITIAL_WORLD = {
   flags: {},
 };
 
+interface CharacterSheet {
+  name: string;
+  race: string;
+  class: string;
+  level: number;
+  hp_current: number;
+  hp_max: number;
+  ac: number;
+  abilities: Record<string, number>;
+  ability_modifiers: Record<string, number>;
+  proficiency_bonus: number;
+  skills: Record<string, { proficient: boolean; bonus: number }>;
+  weapons: Array<{ name: string; attack_bonus: number; damage_dice: string }>;
+  spells: Array<{ name: string; level: number; effect?: string }>;
+  inventory: string[];
+}
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -32,9 +49,19 @@ export default function App() {
   const [gameStarted, setGameStarted] = useState(false);
   const [inputMode, setInputMode] = useState<'action' | 'dialogue'>('action');
   const [worldState, setWorldState] = useState<Record<string, any>>(INITIAL_WORLD);
+  const [character, setCharacter] = useState<CharacterSheet | null>(null);
+  const [showSheet, setShowSheet] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const API_URL = "http://localhost:8000";
+  // Авто-определение API URL: берём хост браузера + порт 8000.
+  // Это позволяет открывать сайт по LAN (192.168.x.x:5173) или через туннель —
+  // фронт всегда стучит на ту же машину, где живёт Python-сервер.
+  const API_URL = (() => {
+    if (typeof window !== "undefined" && window.location?.hostname) {
+      return `${window.location.protocol}//${window.location.hostname}:8000`;
+    }
+    return "http://localhost:8000";
+  })();
 
   const checkServer = async () => {
     try {
@@ -45,8 +72,18 @@ export default function App() {
     }
   };
 
+  const loadCharacter = async () => {
+    try {
+      const res = await fetch(`${API_URL}/character`);
+      if (res.ok) setCharacter(await res.json());
+    } catch (e) {
+      console.warn('Не удалось загрузить чарник', e);
+    }
+  };
+
   useEffect(() => {
     checkServer();
+    loadCharacter();
     const timer = setInterval(checkServer, 10000);
     return () => clearInterval(timer);
   }, []);
@@ -72,8 +109,20 @@ export default function App() {
     setIsLoading(true);
     setCurrentStep('Плетение судьбы...');
 
+    // Собираем историю последних 3 пар Игрок→Мастер для continuity Storyteller'а
+    const history: TurnHistoryEntry[] = [];
+    let pendingPlayer: string | null = null;
+    for (const m of messages.slice(-8)) {
+      if (m.role === 'user') {
+        pendingPlayer = m.content;
+      } else if (m.role === 'assistant' && pendingPlayer) {
+        history.push({ player: pendingPlayer, master: m.content });
+        pendingPlayer = null;
+      }
+    }
+
     try {
-      const result = await playTurn(userContent, worldState);
+      const result = await playTurn(userContent, worldState, history);
 
       // Если Судья сказал impossible — кратко уведомляем игрока
       if (result.intent?.action === 'impossible') {
@@ -92,6 +141,10 @@ export default function App() {
 
       // world_state — источник истины с сервера (HP, локация, флаги)
       setWorldState(result.world_state);
+
+      // Перезагружаем чарник после хода — на случай если игрок получил урон от контратаки
+      // (CHARACTER.hp_current обновляется на сервере в apply_state_delta).
+      loadCharacter();
 
       console.log(`[turn] ${result.time}s category=${result.category} roll=${result.mechanics.roll} success=${result.mechanics.success}`);
     } catch (err) {
@@ -154,6 +207,54 @@ export default function App() {
               {worldSummary}
             </div>
           </div>
+
+          {/* Панель противников: live HP с цветовым индикатором.
+              Без этой панели игрок не понимает что один наёмник умер и спавнился новый — у него ощущение «дерусь долго с одним». */}
+          {(() => {
+            const entities = worldState?.entities || {};
+            const alive = Object.entries(entities).filter(
+              ([, e]: any) => e && e.hp_current > 0
+            );
+            const dead = Object.entries(entities).filter(
+              ([, e]: any) => e && e.hp_current <= 0
+            );
+            if (alive.length === 0 && dead.length === 0) return null;
+            return (
+              <div className="p-4 bg-slate-900/40 border border-slate-700/40 rounded-2xl">
+                <div className="text-[9px] font-bold text-amber-500 mb-3 uppercase tracking-widest flex items-center gap-2">
+                  ⚔️ Противники в сцене
+                </div>
+                <div className="space-y-2">
+                  {alive.map(([eid, e]: any) => {
+                    const hpRatio = e.hp_current / (e.hp_max || 1);
+                    const barColor = hpRatio > 0.6 ? 'bg-emerald-500' : hpRatio > 0.3 ? 'bg-amber-500' : 'bg-red-500';
+                    return (
+                      <div key={eid} className="text-xs">
+                        <div className="flex justify-between font-mono text-slate-300 mb-0.5">
+                          <span>{e.name || eid} <span className="text-slate-500">[{eid}]</span></span>
+                          <span>HP {e.hp_current}/{e.hp_max}</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
+                          <div
+                            className={`h-full ${barColor} transition-all duration-500`}
+                            style={{ width: `${hpRatio * 100}%` }}
+                          />
+                        </div>
+                        <div className="text-[10px] text-slate-600 mt-0.5 font-mono">
+                          AC {e.ac}, поведение: {e.behavior_tag}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {dead.length > 0 && (
+                    <div className="text-[10px] text-slate-500 font-mono pt-2 border-t border-slate-700/30">
+                      💀 Поверженных: {dead.map(([eid, e]: any) => e.name || eid).join(', ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
         
         {/* Шапка */}
@@ -163,7 +264,7 @@ export default function App() {
             <h1 className="text-xl font-bold tracking-[0.2em] uppercase">D&D CORE</h1>
           </div>
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => { if(confirm('Начать новую игру?')) setGameStarted(false); }}
               className="text-[9px] font-mono text-slate-500 hover:text-white transition-colors"
             >
@@ -241,14 +342,60 @@ export default function App() {
               >
                 <Shield className="w-3 h-3" /> ДЕЙСТВИЕ
               </button>
-              <button 
+              <button
                 type="button"
                 onClick={(e) => { e.preventDefault(); setInputMode('dialogue'); }}
                 className={`flex items-center gap-2 px-6 py-2 rounded-full text-[10px] font-bold tracking-widest transition-all ${inputMode === 'dialogue' ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'bg-white/5 text-slate-500 hover:text-slate-300'}`}
               >
                 <Terminal className="w-3 h-3" /> РАЗГОВОР
               </button>
+              {character && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); setShowSheet(s => !s); }}
+                  className={`flex items-center gap-2 px-6 py-2 rounded-full text-[10px] font-bold tracking-widest transition-all border ${showSheet ? 'bg-amber-600/20 text-amber-300 border-amber-500/50' : 'bg-white/5 text-amber-500/70 border-amber-500/20 hover:text-amber-400'}`}
+                >
+                  📜 {character.name} · HP {character.hp_current}/{character.hp_max}
+                </button>
+              )}
             </div>
+
+            {/* Панель чарника — раскрывается над полем ввода */}
+            {showSheet && character && (
+              <div className="mb-4 p-5 bg-amber-950/10 border border-amber-900/30 rounded-2xl font-mono text-xs text-amber-100 space-y-3 animate-in fade-in slide-in-from-bottom-2">
+                <div className="flex justify-between border-b border-amber-900/30 pb-2">
+                  <span className="font-bold tracking-widest">{character.name.toUpperCase()}</span>
+                  <span className="text-amber-400">{character.race} {character.class} — ур. {character.level}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-[11px]">
+                  <div><span className="text-amber-500">HP</span> {character.hp_current}/{character.hp_max}</div>
+                  <div><span className="text-amber-500">AC</span> {character.ac}</div>
+                  <div><span className="text-amber-500">Маст.</span> +{character.proficiency_bonus}</div>
+                </div>
+                <div className="grid grid-cols-6 gap-2 text-[10px]">
+                  {Object.entries(character.ability_modifiers).map(([k, v]) => (
+                    <div key={k} className="text-center border border-amber-900/30 rounded p-1">
+                      <div className="text-amber-500 uppercase">{k}</div>
+                      <div className="text-amber-100">{v >= 0 ? `+${v}` : v}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-[11px]">
+                  <span className="text-amber-500">Оружие:</span>{' '}
+                  {character.weapons.map(w => `${w.name} (атака +${w.attack_bonus}, урон ${w.damage_dice})`).join('; ')}
+                </div>
+                {character.spells.length > 0 && (
+                  <div className="text-[11px]">
+                    <span className="text-amber-500">Заклинания:</span>{' '}
+                    {character.spells.map(s => `${s.name} (ур. ${s.level})`).join('; ')}
+                  </div>
+                )}
+                <div className="text-[11px]">
+                  <span className="text-amber-500">Тренир. навыки:</span>{' '}
+                  {Object.entries(character.skills).filter(([_, s]) => s.proficient).map(([n, s]) => `${n} +${s.bonus}`).join(', ')}
+                </div>
+              </div>
+            )}
 
             <div className="absolute -inset-2 bg-red-600/5 blur-2xl opacity-0 group-focus-within:opacity-100 transition-opacity" />
             <div className="relative flex items-center bg-[#111318] border border-white/5 rounded-3xl pl-8 pr-3 py-3 shadow-2xl backdrop-blur-md">
